@@ -1,0 +1,165 @@
+---
+title: "Human Activity Recognition"
+author: "Yun Yao"
+date: "May 11, 2019"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+## Background
+
+Human Activity Recognition (HAR) has received increasing attention in the computing research community in the recent years. Wearable HAR devices and fitness trackers such as FitBit make it easy to collect a large amount of data about personal activities relatively inexpensively. The potential applications for such data include elderly monitoring, energy expenditure monitoring, and weight-loss assistance. 
+
+HAR research has been focused on discriminating between different activities rather than how well an activity is performed. Similarly, users of wearable HAR devices can easily quantify how much a particular activity they do, but cannot quantify how well they do it. This project uses data from accelerometers on the belt, forearm, arm, and dumbbell to identify correct and incorrect weight lifting methods. By developing a machine learning algorithm to distinguish correct and incorrect methods for exercising, the project can provide useful information for a large variety of applications, such as avoiding injuries, providing self-guided physical therapy, and increasing the efficiency of sports training.
+
+The dataset for this project comes from http://groupware.les.inf.puc-rio.br/har
+Reference: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/yaoyu/Documents/Courses/Data Science/Course8 Practical Machine Learning/Project1")
+options(warn = -1)
+```
+
+
+## Setup
+
+```{r, cache=TRUE}
+library(ggplot2)
+library(lattice)
+library(Hmisc)
+library(caret)
+library(rpart)
+library(randomForest)
+library(foreach)
+library(doParallel)
+library(rpart.plot)
+library(corrplot)
+library(cluster)
+library(fpc)
+set.seed(1234)
+```
+
+
+## Data Preparation
+
+This dataset includes about 2,600,000 observations from 6 healthy adults. The participants each performed 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different ways while their movements were recorded by four sensors located on their arms, forearms, belts, and dumbbells.
+The five methods include: correctly (A), throwing the elbows to the front (B), lifting the dumbbell only halfway (C), lowering the dumbbell only halfway (D), and throwing the hips to the front (E). 
+
+1. Import and clean data
+2. Remove missing data
+3. Divide the dataset into a training set and a testing set
+
+```{r, cache=TRUE}
+train <- read.csv("pml-training.csv", 
+                  header = TRUE, 
+                  na.strings = c("#DIV/0!"))
+
+test <- read.csv("pml-testing.csv", 
+                  header = TRUE, 
+                  na.strings = c("#DIV/0!"))
+
+# convert to numeric variables
+for (i in c(8:ncol(train) - 1)) {train[, i] <- as.numeric(train[, i])}
+for (i in c(8:ncol(test) - 1)) {test[, i] <- as.numeric(test[, i])}
+
+# remove missing values
+datCols <- colnames(train[colSums(is.na(train)) == 0])
+traindata <- train[datCols]
+datCols <- colnames(test[colSums(is.na(test)) == 0])
+testdata <- test[datCols]
+
+# remove irrelevant columns
+cleaned_train <- traindata[-(1:7)]
+cleaned_test <- testdata[-(1:7)]
+
+# data slicing
+idx <- createDataPartition(y = cleaned_train$classe, p = 0.75, list = FALSE)
+training <- cleaned_train[idx, ]
+testing <- cleaned_train[-idx, ]
+```
+
+
+## Exploratory Visualizations
+
+```{r, cache=TRUE}
+plotcluster(training[, -length(names(training))], training$classe)
+```
+
+
+## Modeling
+
+Here we fit a predictive model on the HAR data using the random forests method, which is an ensemble learning method for classification. A number of decision trees are automatically constructed during training.
+
+
+```{r, cache=TRUE}
+controlRF <- trainControl(method = "cv", 5)
+
+modelRF <- train(classe ~ ., data = training, 
+                 method = "rf", trControl = controlRF, ntree = 250)
+
+modelRF
+```
+
+
+## Out-of-sample Error
+
+After fitting the model, we will estimate the performance of the model using the testing data set.
+
+```{r, cache=TRUE}
+predictRF <- predict(modelRF, testing)
+confusionMatrix(testing$classe, predictRF)
+
+(accuracy <- postResample(predictRF, testing$classe))
+(error <- 1 - as.numeric(confusionMatrix(testing$classe, predictRF)$overall[1]))
+```
+
+The estimated accuracy of the model is about 99.4% and the estimated out-of-sample error is about .6%.
+
+
+## Visualizations
+Decision Tree Visualization
+```{r, cache=TRUE}
+tree <- rpart(classe ~ ., data = training, method = "class")
+prp(tree)
+```
+
+Clustering based on predicted category
+```{r, cache=TRUE}
+predicts <- data.frame(matrix(unlist(predictRF), nrow = 4904, byrow = TRUE))
+names(predicts) <- "prediction"
+predicted_testing <- cbind(testing, predicts)
+plotcluster(predicted_testing[, -(120:121)], predicted_testing$prediction)
+```
+
+Clustering based on actual category
+```{r, cache=TRUE}
+plotcluster(testing[, -length(names(testing))], testing$classe)
+```
+
+
+## Predict for the Test Data Set
+
+```{r, cache=TRUE}
+predictions <- predict(modelRF, cleaned_test[, -length(names(cleaned_test))])
+predictions
+```
+
+
+## Conclusions and Next Steps
+
+As shown from the analysis above, the model's predictions are very accurate (99.39%). The analysis shows that, in addition to effectively distinguishing between different types of activities, HAR data can also be used to distinguish between correct and incorrect methods of performing a certain activity. 
+Nevertheless, this project was conducted on a relatively small dataset (i.e., about 2,600,000 observations from 6 participants), so the immediate next step is replicate the current analysis on large data sets. Furthermore, other types of data (e.g., diet, environmental pollution, income, census, education, etc.) can be used along with the HAR data to study how people can use wearable HAR devices to improve their health. 
+
+The future directions of this project include:
+
+1. Improve healthcare monitoring and fall detection for senior citizens and patients
+
+2. Provide self-guided physical therapy and weight-loss training programs
+
+3. Increase the efficiency and precision of sports training and avoid injuries
+
+
+
